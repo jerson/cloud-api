@@ -21,9 +21,11 @@ WORKDIR /usr/src/app
 COPY --from=builder /usr/src/app/prisma /usr/src/app/prisma
 COPY --from=builder /usr/src/app/node_modules/.prisma /usr/src/app/node_modules/.prisma
 COPY --from=builder /usr/src/app/dist /usr/src/app/dist
+COPY docker-entrypoint.sh /usr/src/app/docker-entrypoint.sh
 COPY .env.example ./.env
 
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
-CMD ["node", "./dist/index.js"]
+RUN chmod +x /usr/src/app/docker-entrypoint.sh
+CMD ["./docker-entrypoint.sh"]
