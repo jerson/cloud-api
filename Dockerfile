@@ -18,4 +18,5 @@ RUN npx prisma generate
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+RUN chmod +x /usr/src/app/docker-entrypoint.sh
+CMD ["./docker-entrypoint.sh"]
