@@ -1,19 +1,20 @@
 import express from "express";
 import cors from "cors";
 import cookieSession from "cookie-session";
-import * as jose from "jose";
 import helmet from "helmet";
 import 'dotenv/config';
 
 import * as Devices from "./devices";
-import * as OIDC from "./oidc";
 import * as Webrtc from "./webrtc";
 import * as Releases from "./releases";
 
 import { HttpError } from "./errors";
 import { authenticated } from "./auth";
-import { prisma } from "./db";
 import { initializeWebRTCSignaling } from "./webrtc-signaling";
+import { validateAuthProviderEnv } from "./auth-providers";
+import * as GoogleAuth from "./providers/google";
+import * as PocketBaseAuth from "./providers/pocketbase";
+import { getSessionUser } from "./session";
 
 declare global {
   namespace NodeJS {
@@ -24,10 +25,12 @@ declare global {
       API_HOSTNAME: string;
       APP_HOSTNAME: string;
       COOKIE_SECRET: string;
+      AUTH_PROVIDERS?: string;
 
-      // We use Google OIDC for authentication
-      GOOGLE_CLIENT_ID: string;
-      GOOGLE_CLIENT_SECRET: string;
+      GOOGLE_CLIENT_ID?: string;
+      GOOGLE_CLIENT_SECRET?: string;
+      POCKETBASE_URL?: string;
+      POCKETBASE_AUTH_COLLECTION?: string;
 
       // We use Cloudflare STUN & TURN server for cloud users
       CLOUDFLARE_TURN_ID: string;
@@ -52,6 +55,7 @@ declare global {
 }
 
 const PORT = process.env.PORT || 3000;
+validateAuthProviderEnv();
 
 const app = express();
 app.use(helmet());
@@ -99,18 +103,13 @@ app.get(
   "/me",
   authenticated,
   async (req: express.Request, res: express.Response) => {
-    const idToken = req.session?.id_token;
-    const { sub, iss, exp, aud, iat, jti, nbf } = jose.decodeJwt(idToken);
-
-    let user;
-    if (iss === "https://accounts.google.com") {
-      user = await prisma.user.findUnique({
-        where: { googleId: sub },
-        select: { picture: true, email: true },
-      });
-    }
-
-    return res.json({ ...user, sub });
+    const sessionUser = getSessionUser(req);
+    return res.json({
+      sub: sessionUser.providerUserId,
+      email: sessionUser.email,
+      picture: sessionUser.picture,
+      provider: sessionUser.provider,
+    });
   },
 );
 
@@ -135,8 +134,9 @@ app.post(
   Webrtc.CreateTurnActivity,
 );
 
-app.post("/oidc/google", OIDC.Google);
-app.get("/oidc/callback_o", OIDC.Callback);
+app.post("/oidc/google", GoogleAuth.Google);
+app.post("/auth/pocketbase", PocketBaseAuth.PocketBaseLogin);
+app.get("/oidc/callback_o", GoogleAuth.Callback);
 app.get("/oidc/callback", (req, res) => {
   /*
    * We set the session cookie in the /oidc/google route as a part of 302 redirect to the OIDC login page

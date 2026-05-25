@@ -1,13 +1,12 @@
 import { WebSocket, WebSocketServer } from "ws";
 import express from "express";
-import * as jose from "jose";
 import { prisma } from "./db";
 import { NotFoundError, UnprocessableEntityError } from "./errors";
 import { activeConnections, iceServers, inFlight } from "./webrtc-signaling";
+import { getCloudIdentity, getSessionUser } from "./session";
 
 export const CreateSession = async (req: express.Request, res: express.Response) => {
-  const idToken = req.session?.id_token;
-  const { sub } = jose.decodeJwt(idToken);
+  const sessionUser = getSessionUser(req);
 
   const { id, sd } = req.body;
 
@@ -15,7 +14,7 @@ export const CreateSession = async (req: express.Request, res: express.Response)
   if (!sd) throw new UnprocessableEntityError("Missing sd");
 
   const device = await prisma.device.findUnique({
-    where: { id, user: { googleId: sub } },
+    where: { id, userId: sessionUser.userId },
     select: { id: true },
   });
 
@@ -66,7 +65,9 @@ export const CreateSession = async (req: express.Request, res: express.Response)
           sd,
           ip,
           iceServers,
-          OidcGoogle: idToken,
+          CloudIdentity: getCloudIdentity(req),
+          AuthProvider: sessionUser.provider,
+          ProviderToken: sessionUser.providerToken,
         }),
       );
     });
@@ -130,15 +131,14 @@ export const CreateIceCredentials = async (
 };
 
 export const CreateTurnActivity = async (req: express.Request, res: express.Response) => {
-  const idToken = req.session?.id_token;
-  const { sub } = jose.decodeJwt(idToken);
+  const sessionUser = getSessionUser(req);
   const { bytesReceived, bytesSent } = req.body;
 
   await prisma.turnActivity.create({
     data: {
       bytesReceived,
       bytesSent,
-      user: { connect: { googleId: sub } },
+      user: { connect: { id: sessionUser.userId } },
     },
   });
 
