@@ -1,7 +1,6 @@
 // src/webrtc.ts
 
 import { MessageEvent, WebSocket, WebSocketServer } from "ws";
-import * as jose from "jose";
 import { prisma } from "./db";
 import { IncomingMessage } from "http";
 import { Socket } from "node:net";
@@ -18,6 +17,8 @@ export interface DeviceConnection {
   /** X-Device-SKU header after validation, null when absent or unknown. */
   sku: string | null;
 }
+import express from "express";
+import { getCloudIdentity, getSessionUser } from "./session";
 
 // Maintain the shared state
 export const activeConnections: Map<string, DeviceConnection> = new Map();
@@ -227,7 +228,7 @@ async function handleClientSocketRequest(
     cookieSessionMiddleware(req as any, {} as any, async () => {
       try {
         // Authenticate client and get device ID
-        const { deviceId, token } = await authenticateClientRequest(req as any);
+        const { deviceId, ...sessionAuth } = await authenticateClientRequest(req as any);
         if (!deviceId) {
           return socket.destroy();
         }
@@ -241,7 +242,7 @@ async function handleClientSocketRequest(
 
         // Complete the WebSocket upgrade
         wssClient.handleUpgrade(req, socket, head, ws => {
-          setupClientWebSocket(ws, deviceId, token);
+          setupClientWebSocket(ws, deviceId, sessionAuth as any);
         });
       } catch (error) {
         console.error("Error in client WebSocket setup:", error);
@@ -256,16 +257,13 @@ async function handleClientSocketRequest(
 
 // Authenticate the client connection
 async function authenticateClientRequest(req: Request & { session: any }) {
-  const session = req.session;
-  const token = session?.id_token;
-
-  if (!token) {
+  if (!req.session?.userId) {
     console.log("[Client] No authentication token.");
     return { deviceId: null };
   }
 
   try {
-    const { sub } = jose.decodeJwt(token);
+    const sessionUser = getSessionUser(req as unknown as express.Request);
     const url = new URL(req.url || "", "http://localhost");
     const deviceId = url.searchParams.get("id");
 
@@ -276,7 +274,7 @@ async function authenticateClientRequest(req: Request & { session: any }) {
 
     // Check if device exists and user has access
     const device = await prisma.device.findUnique({
-      where: { id: deviceId, user: { googleId: sub } },
+      where: { id: deviceId, userId: sessionUser.userId },
       select: { id: true },
     });
 
@@ -285,7 +283,12 @@ async function authenticateClientRequest(req: Request & { session: any }) {
       return { deviceId: null };
     }
 
-    return { deviceId, token };
+    return {
+      deviceId,
+      providerToken: sessionUser.providerToken,
+      cloudIdentity: getCloudIdentity(req as unknown as express.Request),
+      authProvider: sessionUser.provider,
+    };
   } catch (error) {
     console.error("[Client] Authentication error:", error);
     return { deviceId: null };
@@ -293,7 +296,11 @@ async function authenticateClientRequest(req: Request & { session: any }) {
 }
 
 // Setup the client WebSocket after authentication
-function setupClientWebSocket(clientWs: WebSocket, deviceId: string, token: string) {
+function setupClientWebSocket(
+  clientWs: WebSocket,
+  deviceId: string,
+  sessionAuth: { providerToken?: string; cloudIdentity: string; authProvider: string },
+) {
   console.log(`[Client] New connection for device ${deviceId}`);
 
   // Get device WebSocket
@@ -343,7 +350,10 @@ function setupClientWebSocket(clientWs: WebSocket, deviceId: string, token: stri
                 sd: msg.data.sd,
                 ip,
                 iceServers,
-                OidcGoogle: token,
+                OidcGoogle: sessionAuth.authProvider === "google" ? sessionAuth.providerToken : undefined,
+                CloudIdentity: sessionAuth.cloudIdentity,
+                AuthProvider: sessionAuth.authProvider,
+                ProviderToken: sessionAuth.providerToken,
               },
             }),
           );

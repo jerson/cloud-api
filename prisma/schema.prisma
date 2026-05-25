@@ -14,12 +14,22 @@ datasource db {
 }
 
 model User {
-  id       BigInt         @id @default(autoincrement())
-  googleId String         @unique
-  email    String?
-  picture  String?
-  device   Device[]
-  Activity TurnActivity[]
+  id         BigInt         @id @default(autoincrement())
+  email      String         @unique
+  picture    String?
+  device     Device[]
+  Activity   TurnActivity[]
+  identities UserIdentity[]
+}
+
+model UserIdentity {
+  id             BigInt @id @default(autoincrement())
+  provider       String
+  providerUserId String
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         BigInt
+
+  @@unique([provider, providerUserId])
 }
 
 model Device {
