@@ -10,6 +10,7 @@ import * as crypto from "crypto";
 import { authenticated } from "./auth";
 import { activeConnections } from "./webrtc-signaling";
 import { effectiveSku } from "./skus";
+import { getSessionUser } from "./session";
 
 /**
  * Version and SKU are known only while the device holds a signaling
@@ -25,7 +26,6 @@ function liveDeviceState(id: string) {
     sku: conn ? effectiveSku(conn.sku) : null,
   };
 }
-import { getSessionUser } from "./session";
 
 export const List = async (req: express.Request, res: express.Response) => {
   const sessionUser = getSessionUser(req);

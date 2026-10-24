@@ -102,11 +102,10 @@ export const CreateIceCredentials = async (
   req: express.Request,
   res: express.Response,
 ) => {
-  const { sub } = jose.decodeJwt(req.session?.id_token);
-  if (!sub) throw new UnauthorizedError();
+  const sessionUser = getSessionUser(req);
 
   const user = await prisma.user.findUnique({
-    where: { googleId: sub },
+    where: { id: sessionUser.userId },
     select: { id: true },
   });
   if (!user) throw new UnauthorizedError();

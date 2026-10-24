@@ -7,6 +7,8 @@ import { Socket } from "node:net";
 import { Device } from "@prisma/client";
 import { Server, ServerResponse } from "node:http";
 import { cookieSessionMiddleware } from ".";
+import express from "express";
+import { getCloudIdentity, getSessionUser } from "./session";
 import { effectiveSku, normalizeSku } from "./skus";
 
 export interface DeviceConnection {
@@ -17,8 +19,6 @@ export interface DeviceConnection {
   /** X-Device-SKU header after validation, null when absent or unknown. */
   sku: string | null;
 }
-import express from "express";
-import { getCloudIdentity, getSessionUser } from "./session";
 
 // Maintain the shared state
 export const activeConnections: Map<string, DeviceConnection> = new Map();

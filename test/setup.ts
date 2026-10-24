@@ -11,7 +11,9 @@ type ReleaseType = string;
 config({ path: ".env.development" });
 
 // Use compose.yaml database credentials (jetkvm user, not postgres)
-process.env.DATABASE_URL = "postgresql://jetkvm:jetkvm@localhost:5432/jetkvm?schema=public";
+process.env.DATABASE_URL =
+  process.env.TEST_DATABASE_URL ||
+  "postgresql://jetkvm:jetkvm@localhost:5432/jetkvm?schema=public";
 
 // Override S3 config for testing (mock responses)
 process.env.NODE_ENV = "test";
@@ -177,7 +179,11 @@ export async function resetToSeedData() {
   for (const release of seedReleases) {
     const dbRelease = await testPrisma.release.upsert({
       where: { version_type: { version: release.version, type: release.type } },
-      update: { rolloutPercentage: release.rolloutPercentage, url: release.url, hash: release.hash },
+      update: {
+        rolloutPercentage: release.rolloutPercentage,
+        url: release.url,
+        hash: release.hash,
+      },
       create: release,
     });
 
